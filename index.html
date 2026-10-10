@@ -5,6 +5,9 @@
 <title>Squadre</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <style>
 :root{--bg:#f4f6fa;--card:#fff;--tx:#0b1220;--mu:#5b667a;--ac:#1a56db;--hl:#e6efff;--ln:#e3e8f0;--live:#d92d20;color-scheme:light dark}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0b1220;--card:#131c30;--tx:#eef2f9;--mu:#93a0b8;--ac:#6ea0ff;--hl:#1b2a4a;--ln:#24304a}}
@@ -70,6 +73,7 @@ function draw(){
 }
 document.getElementById('tabs').addEventListener('click',e=>{const k=e.target.dataset.k;if(k){cur=k;draw()}});
 draw();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
 </body>
 </html>
