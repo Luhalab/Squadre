@@ -20,7 +20,7 @@ async function get(url) {
   return r.json();
 }
 const TSDB = 'https://www.thesportsdb.com/api/v1/json/';
-const TQ = { inter: ['Inter', 'Inter Milan', 'Internazionale'], palermo: ['Palermo'], italia: ['Italy'] };
+const TQ = { inter: ['Inter Milan', 'Inter', 'Internazionale'], palermo: ['Palermo'], italia: ['Italy'] };
 async function tsdb(path) {
   let e;
   for (const k of ['3', '123']) { try { return await get(TSDB + k + '/' + path); } catch (x) { e = x; } }
@@ -36,6 +36,19 @@ async function tsdbNext(t) {
     return { t: ts + (/[zZ]$|[+-]\d\d:?\d\d$/.test(ts) ? '' : 'Z'), state: 'pre', clock: '',
       cs: [{ raw: e.strHomeTeam, home: true, sc: null }, { raw: e.strAwayTeam, home: false, sc: null }] };
   });
+}
+// Programma di una squadra: giocate (schedule) + future (schedule?fixture=true, tutte le competizioni).
+async function sched(lg, id) {
+  const fut = (async () => {
+    const urls = [`https://site.web.api.espn.com/apis/site/v2/sports/soccer/all/teams/${id}/schedule?fixture=true`,
+      `${B}site/v2/sports/soccer/${lg}/teams/${id}/schedule?fixture=true`];
+    for (const u of urls) { try { const e = events(await get(u)); if (e.length) return e; } catch (x) { /* provo la prossima */ } }
+    throw new Error('nessuna partita futura');
+  })();
+  const [p, f] = await Promise.allSettled([get(`${B}site/v2/sports/soccer/${lg}/teams/${id}/schedule`).then(events), fut]);
+  if (p.status === 'rejected' && f.status === 'rejected') throw p.reason;
+  const pv = p.status === 'fulfilled' ? p.value : [], fv = f.status === 'fulfilled' ? f.value : [];
+  return { ev: fv.concat(pv), nr: p.status === 'fulfilled' ? pv.length : 'err', nf: f.status === 'fulfilled' ? fv.length : 'err' };
 }
 async function board(lg, now) {
   const d = n => ymd(new Date(now + n * 864e5));
@@ -135,15 +148,15 @@ module.exports = async (req, res) => {
   for (const t of TEAMS) for (const k of keys) {
     const g = S[k] && S[k].find(g => g.rows.some(r => t.re.test(r.raw)));
     const r = g && g.rows.find(r => t.re.test(r.raw));
-    if (r && r.id) { tid[t.id] = `${B}site/v2/sports/soccer/${LG[k]}/teams/${r.id}/schedule`; break; }
+    if (r && r.id) { tid[t.id] = { lg: LG[k], id: r.id }; break; }
   }
-  const sj = await Promise.allSettled(TEAMS.filter(t => tid[t.id]).map(t => get(tid[t.id]).then(events)));
+  const sj = await Promise.allSettled(TEAMS.filter(t => tid[t.id]).map(t => sched(tid[t.id].lg, tid[t.id].id)));
   TEAMS.filter(t => tid[t.id]).forEach((t, i) => {
-    if (sj[i].status === 'fulfilled') evs = evs.concat(sj[i].value);
+    if (sj[i].status === 'fulfilled') evs = evs.concat(sj[i].value.ev);
     else errors.push(`Programma ${t.name}: ${sj[i].reason && sj[i].reason.message}`);
   });
   const tot = {}, tsn = {};
-  TEAMS.filter(t => tid[t.id]).forEach((t, i) => { if (sj[i].status === 'fulfilled') tot[t.id] = sj[i].value.length; });
+  TEAMS.filter(t => tid[t.id]).forEach((t, i) => { if (sj[i].status === 'fulfilled') tot[t.id] = sj[i].value.nr + ' giocate + ' + sj[i].value.nf + ' future'; });
   const nf = t => { const f = forTeam(t, evs); return f.next ? 1 + f.more.length : 0; };
   const need = TEAMS.filter(t => nf(t) < 2);
   const tj = await Promise.allSettled(need.map(tsdbNext));
@@ -151,7 +164,7 @@ module.exports = async (req, res) => {
     if (tj[i].status === 'fulfilled') { evs = evs.concat(tj[i].value); tsn[t.id] = tj[i].value.length; }
     else { tsn[t.id] = 'err'; errors.push(`Calendario ${t.name} (TheSportsDB): ${tj[i].reason && tj[i].reason.message}`); }
   });
-  const dbg = TEAMS.map(t => `${t.name}: ESPN ${tot[t.id] == null ? '–' : tot[t.id]} partite${tsn[t.id] != null ? ', TSDB ' + tsn[t.id] : ''} → ${nf(t)} future`);
+  const dbg = TEAMS.map(t => `${t.name}: ESPN ${tot[t.id] == null ? '–' : tot[t.id]}${tsn[t.id] != null ? ', TSDB ' + tsn[t.id] : ''} → ${nf(t)} future`);
   for (const t of TEAMS) {
     const o = { id: t.id, name: t.name };
     for (const k of keys) {
