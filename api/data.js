@@ -36,7 +36,12 @@ function groups(j) {
     name: c.name || '',
     rows: ((c.standings && c.standings.entries) || []).map((e, i) => {
       const raw = (e.team && (e.team.displayName || e.team.name)) || '?';
-      return { raw, id: e.team && e.team.id, n: nm(raw), pts: stat(e, 'points'), pl: stat(e, 'gamesPlayed'), rk: stat(e, 'rank') || i + 1 };
+      const dr = stat(e, 'ties');
+      return {
+        raw, id: e.team && e.team.id, n: nm(raw), pts: stat(e, 'points'), pl: stat(e, 'gamesPlayed'), rk: stat(e, 'rank') || i + 1,
+        w: stat(e, 'wins'), d: dr != null ? dr : stat(e, 'draws'), l: stat(e, 'losses'), gd: stat(e, 'pointDifferential'),
+        nc: (e.note && e.note.color) || null, nd: (e.note && e.note.description) || null,
+      };
     }).sort((a, b) => a.rk - b.rk),
   }));
 }
@@ -75,6 +80,7 @@ function forTeam(t, evs) {
     out.last = { t: l.t, home: l.home, opp: l.opp, score: l.sc + '-' + l.osc, res: l.sc > l.osc ? 'V' : l.sc < l.osc ? 'P' : 'N' };
   }
   if (inn[0]) out.live = { score: inn[0].sc + '-' + inn[0].osc, clock: inn[0].clock, opp: inn[0].opp };
+  out.form = post.slice(-5).map(x => x.sc > x.osc ? 'V' : x.sc < x.osc ? 'P' : 'N');
   return out;
 }
 
@@ -104,7 +110,7 @@ module.exports = async (req, res) => {
       if (g) { pick = pick || g; mine.push(g.rows.find(r => t.re.test(r.raw)).n); }
     }
     const g = pick || gs[0];
-    tables[k] = { title: TIT[k], mine, rows: g.rows.map(r => [r.rk, r.n, r.pts, r.pl]) };
+    tables[k] = { title: TIT[k], mine, rows: g.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
   }
   let evs = [].concat(...Object.values(E));
   const tid = {};
