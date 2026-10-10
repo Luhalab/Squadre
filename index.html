@@ -34,45 +34,65 @@ th,td{padding:7px 4px;text-align:right}th:nth-child(2),td:nth-child(2){text-alig
 th{color:var(--mu);font-weight:500;font-size:12px}
 tr.me td{background:var(--hl);font-weight:700}
 .tw{overflow-x:auto}
+.src{color:var(--mu);font-size:11px;text-align:center;margin-top:8px}.err{color:var(--live)}
 </style>
 </head>
 <body>
 <header><h1>Le mie squadre</h1></header>
-<div class="note">Dati di esempio: la grafica è una bozza, i numeri non sono reali.</div>
+<div class="note" id="note" hidden>Dati di esempio: i numeri non sono reali.</div>
 <main>
 <div id="cards"></div>
 <div class="tabs" role="tablist" id="tabs"></div>
 <div class="card tw"><table id="tbl"></table></div>
+<div class="src" id="src"></div>
 </main>
 <script>
-// Dati finti (solo per la bozza grafica)
-const SQ=[
- {id:'inter',n:'Inter',sub:'Serie A',ini:'IN',lega:'A',pos:'1°',pt:'22 pt',next:'Sab 18:00 · Parma (casa)',last:'V 2-0 vs Como',live:false},
- {id:'palermo',n:'Palermo',sub:'Serie B',ini:'PA',lega:'B',pos:'3°',pt:'17 pt',next:'Dom 15:00 · Bari (trasferta)',last:'P 1-1 vs Spezia',live:true,score:"1-0 · 34'"},
- {id:'italia',n:'Italia',sub:'Nations League',ini:'IT',lega:'N',pos:'1°',pt:'6 pt',next:'Ven 20:45 · Francia (casa)',last:'V 3-1 vs Israele',live:false}
-];
-const TAB={A:{t:'Serie A',me:'Inter',r:[['Inter',22],['Napoli',20],['Juventus',18],['Milan',17],['Roma',15]]},
- B:{t:'Serie B',me:'Palermo',r:[['Venezia',19],['Monza',18],['Palermo',17],['Bari',15],['Spezia',14]]},
- N:{t:'Nations League',me:'Italia',r:[['Italia',6],['Francia',4],['Belgio',3],['Israele',0]]}};
+const DAY=864e5,iso=ms=>new Date(Date.now()+ms).toISOString();
+const DEMO={src:'demo',teams:[
+ {id:'inter',name:'Inter',league:'Serie A',pos:1,pts:22,next:{t:iso(2*DAY),home:true,opp:'Parma'},last:{res:'V',score:'2-0',opp:'Como'}},
+ {id:'palermo',name:'Palermo',league:'Serie B',pos:3,pts:17,live:{score:'1-0',clock:"34'",opp:'Bari'},next:{t:iso(7*DAY),home:false,opp:'Spezia'},last:{res:'N',score:'1-1',opp:'Cesena'}},
+ {id:'italia',name:'Italia',league:'Nations League',pos:1,pts:6,next:{t:iso(9*DAY),home:true,opp:'Francia'},last:{res:'V',score:'3-1',opp:'Israele'}}],
+ tables:{A:{title:'Serie A',mine:['Inter'],rows:[[1,'Inter',22],[2,'Napoli',20],[3,'Juventus',18],[4,'Milan',17]]},
+  B:{title:'Serie B',mine:['Palermo'],rows:[[1,'Venezia',19],[2,'Monza',18],[3,'Palermo',17],[4,'Bari',15]]},
+  N:{title:'Nations League',mine:['Italia'],rows:[[1,'Italia',6],[2,'Francia',4],[3,'Belgio',3],[4,'Israele',0]]}}};
+let D=DEMO,err='',cur=null,last=0;
 const g=q=>'https://www.google.com/search?q='+encodeURIComponent(q);
-document.getElementById('cards').innerHTML=SQ.map(s=>`
-<div class="card"><div class="top"><div class="crest">${s.ini}</div>
-<div><b>${s.n}</b><small>${s.sub}</small></div>
-<div class="pos">${s.pos}<small>${s.pt}</small></div></div>
-${s.live?`<div class="row"><span><span class="dot"></span>In corso</span><b>${s.score}</b></div>`:''}
-<div class="row"><span>Prossima</span><span>${s.next}</span></div>
-<div class="row"><span>Ultima</span><span>${s.last}</span></div>
-<a class="live" href="${g(s.n+' partita')}" target="_blank" rel="noopener">Live su Google</a></div>`).join('');
-let cur='A';
-function draw(){
- const d=TAB[cur];
- document.getElementById('tabs').innerHTML=Object.entries(TAB).map(([k,v])=>
-  `<button role="tab" aria-selected="${k===cur}" data-k="${k}">${v.t}</button>`).join('');
- document.getElementById('tbl').innerHTML='<tr><th>#</th><th>Squadra</th><th>Pt</th></tr>'+
-  d.r.map((x,i)=>`<tr class="${x[0]===d.me?'me':''}"><td>${i+1}</td><td>${x[0]}</td><td>${x[1]}</td></tr>`).join('');
+const fmt=t=>{const d=new Date(t);return d.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'})+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})};
+const ini=n=>n.slice(0,2).toUpperCase();
+function cards(){document.getElementById('cards').innerHTML=D.teams.map(s=>`
+<div class="card"><div class="top"><div class="crest">${ini(s.name)}</div>
+<div><b>${s.name}</b><small>${s.league||''}</small></div>
+<div class="pos">${s.pos?s.pos+'°':'–'}<small>${s.pts!=null?s.pts+' pt':''}</small></div></div>
+${s.live?`<div class="row"><span><span class="dot"></span>In corso vs ${s.live.opp}</span><b>${s.live.score} · ${s.live.clock}</b></div>`:''}
+<div class="row"><span>Prossima</span><span>${s.next?fmt(s.next.t)+' · '+s.next.opp+(s.next.home?' (casa)':' (trasferta)'):'—'}</span></div>
+<div class="row"><span>Ultima</span><span>${s.last?s.last.res+' '+s.last.score+' vs '+s.last.opp:'—'}</span></div>
+<a class="live" href="${g(s.name+' partita')}" target="_blank" rel="noopener">Live su Google</a></div>`).join('')}
+function tabs(){
+ const T=D.tables||{};let ks=Object.keys(T).filter(k=>T[k].rows.length&&T[k].mine.length);
+ if(!ks.length)ks=Object.keys(T).filter(k=>T[k].rows.length);
+ if(!ks.includes(cur))cur=ks[0];
+ document.getElementById('tabs').innerHTML=ks.map(k=>`<button role="tab" aria-selected="${k===cur}" data-k="${k}">${T[k].title}</button>`).join('');
+ const t=T[cur];
+ document.getElementById('tbl').innerHTML=t?'<tr><th>#</th><th>Squadra</th><th>G</th><th>Pt</th></tr>'+t.rows.map(r=>`<tr class="${t.mine.includes(r[1])?'me':''}"><td>${r[0]}</td><td>${r[1]}</td><td>${r[3]!=null?r[3]:''}</td><td>${r[2]!=null?r[2]:''}</td></tr>`).join(''):'';
 }
-document.getElementById('tabs').addEventListener('click',e=>{const k=e.target.dataset.k;if(k){cur=k;draw()}});
-draw();
+function render(){
+ cards();tabs();
+ document.getElementById('note').hidden=D.src!=='demo';
+ const hm=new Date(D.ts||Date.now()).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+ document.getElementById('src').innerHTML=D.src==='demo'?`<span class="err">Dati reali non disponibili${err?': '+err:''}</span>`:`Fonte: ${D.src} · aggiornato ${hm}`+((D.errors&&D.errors.length)?`<br><span class="err">${D.errors.join(' · ')}</span>`:'');
+}
+async function load(){
+ last=Date.now();
+ try{const r=await fetch('/api/data');const j=await r.json();
+  if(!r.ok)throw new Error((j.errors||['HTTP '+r.status]).join(' · '));
+  D=j;err='';}
+ catch(e){D=DEMO;err=e.message;}
+ render();
+}
+document.getElementById('tabs').addEventListener('click',e=>{const k=e.target.dataset.k;if(k){cur=k;tabs()}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-last>60000)load()});
+setInterval(()=>{if(!document.hidden&&D.teams.some(t=>t.live))load()},60000);
+load();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
 </body>
