@@ -52,6 +52,7 @@ tr.me td{background:color-mix(in srgb,var(--tc) 24%,transparent);font-weight:700
 .tm-inter{--tc:#2563eb}.tm-palermo{--tc:#ec4899}.tm-italia{--tc:#0ea5e9}
 td:last-child{font-weight:700}
 .lg{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 4px 0;font-size:11px;color:var(--mu)}
+.lg b{color:var(--tx)}
 .lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 /* dettaglio squadra */
 .dh{padding:0 4px 4px;font-size:15px}.dh b{color:var(--c1)}
@@ -67,8 +68,10 @@ td:last-child{font-weight:700}
 <main>
 <div class="note" id="note" hidden>Dati di esempio: i numeri non sono reali.</div>
 <div class="mt" id="mt"></div>
-<div class="card"><div class="th" id="th"></div><div class="tw"><table id="tbl"></table></div><div class="lg" id="lg"></div></div>
 <div class="card tm-x" id="dt"></div>
+<div class="card"><div class="th" id="th"></div><div class="tw"><table id="tbl"></table></div>
+<div class="lg" id="lk"><span><b>G</b> giocate</span><span><b>V</b> vinte</span><span><b>N</b> pareggiate</span><span><b>P</b> perse</span><span><b>DR</b> differenza reti</span><span><b>Pt</b> punti</span></div>
+<div class="lg" id="lg"></div></div>
 <div class="src" id="src"></div>
 </main>
 <script>
