@@ -124,7 +124,7 @@ function render(){
  cards();table();detail();
  $('note').hidden=D.src!=='demo';
  const via=D.via&&Object.values(D.via).some(v=>v>1)?`<br>via: ${Object.entries(D.via).map(([k,v])=>k+v).join(' ')}`:'';
- $('src').innerHTML=D.src==='demo'?`<span class="err">Dati reali non disponibili${err?': '+err:''}</span>`:`Fonte: ${D.src} · aggiornato ${hm(D.ts||Date.now())}`+via+((D.errors&&D.errors.length)?`<br><span class="err">${D.errors.join(' · ')}</span>`:'');
+ $('src').innerHTML=D.src==='demo'?`<span class="err">Dati reali non disponibili${err?': '+err:''}</span>`:`Fonte: ${D.src} · aggiornato ${hm(D.ts||Date.now())}`+via+(D.dbg?`<br>${D.dbg.join(' · ')}`:'')+((D.errors&&D.errors.length)?`<br><span class="err">${D.errors.join(' · ')}</span>`:'');
 }
 async function load(){
  last=Date.now();

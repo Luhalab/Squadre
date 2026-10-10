@@ -19,6 +19,24 @@ async function get(url) {
   if (!r.ok) { const b = await r.text().catch(() => ''); throw new Error('HTTP ' + r.status + ' ' + b.replace(/\s+/g, ' ').slice(0, 80)); }
   return r.json();
 }
+const TSDB = 'https://www.thesportsdb.com/api/v1/json/';
+const TQ = { inter: ['Inter', 'Inter Milan', 'Internazionale'], palermo: ['Palermo'], italia: ['Italy'] };
+async function tsdb(path) {
+  let e;
+  for (const k of ['3', '123']) { try { return await get(TSDB + k + '/' + path); } catch (x) { e = x; } }
+  throw e;
+}
+async function tsdbNext(t) {
+  const q = await tsdb('searchteams.php?t=' + encodeURIComponent(TQ[t.id][0]));
+  const c = (q.teams || []).filter(x => x.strSport === 'Soccer' && TQ[t.id].includes(x.strTeam));
+  if (!c.length) throw new Error('squadra non trovata');
+  const j = await tsdb('eventsnext.php?id=' + c[0].idTeam);
+  return (j.events || []).map(e => {
+    const ts = e.strTimestamp ? String(e.strTimestamp).replace(' ', 'T') : e.dateEvent + 'T' + (e.strTime || '00:00:00');
+    return { t: ts + (/[zZ]$|[+-]\d\d:?\d\d$/.test(ts) ? '' : 'Z'), state: 'pre', clock: '',
+      cs: [{ raw: e.strHomeTeam, home: true, sc: null }, { raw: e.strAwayTeam, home: false, sc: null }] };
+  });
+}
 async function board(lg, now) {
   const d = n => ymd(new Date(now + n * 864e5));
   const base = `${B}site/v2/sports/soccer/${lg}/scoreboard`;
@@ -52,7 +70,7 @@ function events(j) {
     const st = so.type || {};
     const sc = x => x == null ? null : Number(typeof x === 'object' ? (x.value != null ? x.value : x.displayValue) : x);
     return {
-      t: e.date || c.date, state: st.state, clock: so.displayClock || st.shortDetail || '',
+      t: e.date || c.date, state: st.state || (new Date(e.date || c.date) > Date.now() ? 'pre' : st.state), clock: so.displayClock || st.shortDetail || '',
       cs: (c.competitors || []).map(x => ({
         raw: (x.team && (x.team.displayName || x.team.name)) || '?',
         home: x.homeAway === 'home', sc: sc(x.score),
@@ -63,7 +81,7 @@ function events(j) {
 function forTeam(t, evs) {
   const seen = new Set();
   const mine = evs.filter(e => e.cs.some(c => t.re.test(c.raw))).filter(e => {
-    const k = (e.t || '').slice(0, 13); if (seen.has(k)) return false; seen.add(k); return true;
+    const k = (e.t || '').slice(0, 10); if (seen.has(k)) return false; seen.add(k); return true;
   });
   const view = e => {
     const me = e.cs.find(c => t.re.test(c.raw));
@@ -124,6 +142,16 @@ module.exports = async (req, res) => {
     if (sj[i].status === 'fulfilled') evs = evs.concat(sj[i].value);
     else errors.push(`Programma ${t.name}: ${sj[i].reason && sj[i].reason.message}`);
   });
+  const tot = {}, tsn = {};
+  TEAMS.filter(t => tid[t.id]).forEach((t, i) => { if (sj[i].status === 'fulfilled') tot[t.id] = sj[i].value.length; });
+  const nf = t => { const f = forTeam(t, evs); return f.next ? 1 + f.more.length : 0; };
+  const need = TEAMS.filter(t => nf(t) < 2);
+  const tj = await Promise.allSettled(need.map(tsdbNext));
+  need.forEach((t, i) => {
+    if (tj[i].status === 'fulfilled') { evs = evs.concat(tj[i].value); tsn[t.id] = tj[i].value.length; }
+    else { tsn[t.id] = 'err'; errors.push(`Calendario ${t.name} (TheSportsDB): ${tj[i].reason && tj[i].reason.message}`); }
+  });
+  const dbg = TEAMS.map(t => `${t.name}: ESPN ${tot[t.id] == null ? '–' : tot[t.id]} partite${tsn[t.id] != null ? ', TSDB ' + tsn[t.id] : ''} → ${nf(t)} future`);
   for (const t of TEAMS) {
     const o = { id: t.id, name: t.name };
     for (const k of keys) {
@@ -149,5 +177,5 @@ module.exports = async (req, res) => {
     if (t.last && now - new Date(t.last.t).getTime() < 3 * 3600e3) ttl = Math.min(ttl, 300);
   }
   res.setHeader('cache-control', `public, max-age=0, s-maxage=${ttl}, stale-while-revalidate=${Math.min(ttl, 300)}`);
-  res.status(200).json({ src: 'ESPN', ts: new Date(now).toISOString(), ttl, via, teams, tables, errors });
+  res.status(200).json({ src: 'ESPN', ts: new Date(now).toISOString(), ttl, via, dbg, teams, tables, errors });
 };
