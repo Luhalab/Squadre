@@ -22,7 +22,7 @@ async function get(url) {
 async function board(lg, now) {
   const d = n => ymd(new Date(now + n * 864e5));
   const base = `${B}site/v2/sports/soccer/${lg}/scoreboard`;
-  const tries = [`?dates=${d(-45)}-${d(120)}&limit=1000`, `?dates=${d(-21)}-${d(60)}`, ''];
+  const tries = [''];
   const errs = [];
   for (let i = 0; i < tries.length; i++) {
     try { return { v: events(await get(base + tries[i])), via: i + 1 }; }
@@ -36,34 +36,40 @@ function groups(j) {
     name: c.name || '',
     rows: ((c.standings && c.standings.entries) || []).map((e, i) => {
       const raw = (e.team && (e.team.displayName || e.team.name)) || '?';
-      return { raw, n: nm(raw), pts: stat(e, 'points'), pl: stat(e, 'gamesPlayed'), rk: stat(e, 'rank') || i + 1 };
+      return { raw, id: e.team && e.team.id, n: nm(raw), pts: stat(e, 'points'), pl: stat(e, 'gamesPlayed'), rk: stat(e, 'rank') || i + 1 };
     }).sort((a, b) => a.rk - b.rk),
   }));
 }
 function events(j) {
   return (j.events || []).map(e => {
     const c = (e.competitions && e.competitions[0]) || {};
-    const st = (e.status && e.status.type) || {};
+    const so = e.status || c.status || {};
+    const st = so.type || {};
+    const sc = x => x == null ? null : Number(typeof x === 'object' ? (x.value != null ? x.value : x.displayValue) : x);
     return {
-      t: e.date, state: st.state, clock: (e.status && e.status.displayClock) || st.shortDetail || '',
+      t: e.date || c.date, state: st.state, clock: so.displayClock || st.shortDetail || '',
       cs: (c.competitors || []).map(x => ({
         raw: (x.team && (x.team.displayName || x.team.name)) || '?',
-        home: x.homeAway === 'home', sc: x.score == null ? null : Number(x.score),
+        home: x.homeAway === 'home', sc: sc(x.score),
       })),
     };
   });
 }
 function forTeam(t, evs) {
-  const mine = evs.filter(e => e.cs.some(c => t.re.test(c.raw)));
+  const seen = new Set();
+  const mine = evs.filter(e => e.cs.some(c => t.re.test(c.raw))).filter(e => {
+    const k = (e.t || '').slice(0, 13); if (seen.has(k)) return false; seen.add(k); return true;
+  });
   const view = e => {
     const me = e.cs.find(c => t.re.test(c.raw));
     const op = e.cs.find(c => c !== me) || {};
     return { t: e.t, home: me.home, opp: nm(op.raw || '?'), sc: me.sc, osc: op.sc, clock: e.clock };
   };
   const by = s => mine.filter(e => e.state === s).sort((a, b) => new Date(a.t) - new Date(b.t)).map(view);
-  const pre = by('pre'), post = by('post'), inn = by('in');
+  const pre = by('pre').filter(x => new Date(x.t).getTime() > Date.now() - 3 * 3600e3), post = by('post'), inn = by('in');
   const out = {};
   if (pre[0]) out.next = { t: pre[0].t, home: pre[0].home, opp: pre[0].opp };
+  out.more = pre.slice(1, 4).map(x => ({ t: x.t, home: x.home, opp: x.opp }));
   if (post.length) {
     const l = post[post.length - 1];
     out.last = { t: l.t, home: l.home, opp: l.opp, score: l.sc + '-' + l.osc, res: l.sc > l.osc ? 'V' : l.sc < l.osc ? 'P' : 'N' };
@@ -100,7 +106,18 @@ module.exports = async (req, res) => {
     const g = pick || gs[0];
     tables[k] = { title: TIT[k], mine, rows: g.rows.map(r => [r.rk, r.n, r.pts, r.pl]) };
   }
-  const evs = [].concat(...Object.values(E));
+  let evs = [].concat(...Object.values(E));
+  const tid = {};
+  for (const t of TEAMS) for (const k of keys) {
+    const g = S[k] && S[k].find(g => g.rows.some(r => t.re.test(r.raw)));
+    const r = g && g.rows.find(r => t.re.test(r.raw));
+    if (r && r.id) { tid[t.id] = `${B}site/v2/sports/soccer/${LG[k]}/teams/${r.id}/schedule`; break; }
+  }
+  const sj = await Promise.allSettled(TEAMS.filter(t => tid[t.id]).map(t => get(tid[t.id]).then(events)));
+  TEAMS.filter(t => tid[t.id]).forEach((t, i) => {
+    if (sj[i].status === 'fulfilled') evs = evs.concat(sj[i].value);
+    else errors.push(`Programma ${t.name}: ${sj[i].reason && sj[i].reason.message}`);
+  });
   for (const t of TEAMS) {
     const o = { id: t.id, name: t.name };
     for (const k of keys) {

@@ -34,7 +34,7 @@ th,td{padding:7px 4px;text-align:right}th:nth-child(2),td:nth-child(2){text-alig
 th{color:var(--mu);font-weight:500;font-size:12px}
 tr.me td{background:var(--hl);font-weight:700}
 .tw{overflow-x:auto}
-.src{color:var(--mu);font-size:11px;text-align:center;margin-top:8px}.err{color:var(--live)}
+.src{color:var(--mu);font-size:11px;text-align:center;margin-top:8px}.err{color:var(--live)}.sub{font-size:13px;border-top:0;padding-top:0;color:var(--mu)}
 </style>
 </head>
 <body>
@@ -65,6 +65,7 @@ function cards(){document.getElementById('cards').innerHTML=D.teams.map(s=>`
 <div class="pos">${s.pos?s.pos+'°':'–'}<small>${s.pts!=null?s.pts+' pt':''}</small></div></div>
 ${s.live?`<div class="row"><span><span class="dot"></span>In corso vs ${s.live.opp}</span><b>${s.live.score} · ${s.live.clock}</b></div>`:''}
 <div class="row"><span>Prossima</span><span>${s.next?fmt(s.next.t)+' · '+s.next.opp+(s.next.home?' (casa)':' (trasferta)'):'—'}</span></div>
+${(s.more||[]).map((m,i)=>`<div class="row sub"><span>${i?'':'Poi'}</span><span>${fmt(m.t)} · ${m.opp}${m.home?' (casa)':' (trasf.)'}</span></div>`).join('')}
 <div class="row"><span>Ultima</span><span>${s.last?s.last.res+' '+s.last.score+' vs '+s.last.opp:'—'}</span></div>
 <a class="live" href="${g(s.name+' partita')}" target="_blank" rel="noopener">Live su Google</a></div>`).join('')}
 function tabs(){
