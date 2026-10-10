@@ -79,7 +79,7 @@ function render(){
  cards();tabs();
  document.getElementById('note').hidden=D.src!=='demo';
  const hm=new Date(D.ts||Date.now()).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
- document.getElementById('src').innerHTML=D.src==='demo'?`<span class="err">Dati reali non disponibili${err?': '+err:''}</span>`:`Fonte: ${D.src} · aggiornato ${hm}`+((D.errors&&D.errors.length)?`<br><span class="err">${D.errors.join(' · ')}</span>`:'');
+ document.getElementById('src').innerHTML=D.src==='demo'?`<span class="err">Dati reali non disponibili${err?': '+err:''}</span>`:`Fonte: ${D.src} · aggiornato ${hm}`+(D.via&&Object.values(D.via).some(v=>v>1)?`<br>via: ${Object.entries(D.via).map(([k,v])=>k+v).join(' ')}`:'')+((D.errors&&D.errors.length)?`<br><span class="err">${D.errors.join(' · ')}</span>`:'');
 }
 async function load(){
  last=Date.now();

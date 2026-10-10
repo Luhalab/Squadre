@@ -8,7 +8,7 @@ const TEAMS = [
   { id: 'palermo', name: 'Palermo', re: /palermo/i },
   { id: 'italia', name: 'Italia', re: /^(italy|italia)$/i },
 ];
-const IT = { 'Inter Milan': 'Inter', Italy: 'Italia', France: 'Francia', Germany: 'Germania', Spain: 'Spagna', Belgium: 'Belgio', Israel: 'Israele', Netherlands: 'Paesi Bassi', Portugal: 'Portogallo', Switzerland: 'Svizzera', England: 'Inghilterra', Croatia: 'Croazia', Denmark: 'Danimarca', Norway: 'Norvegia', Sweden: 'Svezia', Poland: 'Polonia', Turkey: 'Turchia', Greece: 'Grecia', Czechia: 'Rep. Ceca', 'Czech Republic': 'Rep. Ceca', Scotland: 'Scozia', Wales: 'Galles', Ireland: 'Irlanda', 'Republic of Ireland': 'Irlanda', Hungary: 'Ungheria', Ukraine: 'Ucraina', Slovakia: 'Slovacchia', 'Bosnia and Herzegovina': 'Bosnia', 'North Macedonia': 'Macedonia N.', Finland: 'Finlandia', Iceland: 'Islanda' };
+const IT = { 'Inter Milan': 'Inter', Internazionale: 'Inter', 'AS Roma': 'Roma', 'AC Milan': 'Milan', Italy: 'Italia', France: 'Francia', Germany: 'Germania', Spain: 'Spagna', Belgium: 'Belgio', Israel: 'Israele', Netherlands: 'Paesi Bassi', Portugal: 'Portogallo', Switzerland: 'Svizzera', England: 'Inghilterra', Croatia: 'Croazia', Denmark: 'Danimarca', Norway: 'Norvegia', Sweden: 'Svezia', Poland: 'Polonia', Turkey: 'Turchia', Greece: 'Grecia', Czechia: 'Rep. Ceca', 'Czech Republic': 'Rep. Ceca', Scotland: 'Scozia', Wales: 'Galles', Ireland: 'Irlanda', 'Republic of Ireland': 'Irlanda', Hungary: 'Ungheria', Ukraine: 'Ucraina', Slovakia: 'Slovacchia', 'Bosnia and Herzegovina': 'Bosnia', 'North Macedonia': 'Macedonia N.', Finland: 'Finlandia', Iceland: 'Islanda' };
 const nm = n => IT[n] || n;
 const UA = { 'user-agent': 'Mozilla/5.0 (Squadre app personale)' };
 const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
@@ -16,8 +16,19 @@ const stat = (e, n) => { const s = (e.stats || []).find(x => x.name === n); retu
 
 async function get(url) {
   const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(8000) });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  if (!r.ok) { const b = await r.text().catch(() => ''); throw new Error('HTTP ' + r.status + ' ' + b.replace(/\s+/g, ' ').slice(0, 80)); }
   return r.json();
+}
+async function board(lg, now) {
+  const d = n => ymd(new Date(now + n * 864e5));
+  const base = `${B}site/v2/sports/soccer/${lg}/scoreboard`;
+  const tries = [`?dates=${d(-45)}-${d(120)}&limit=1000`, `?dates=${d(-21)}-${d(60)}`, ''];
+  const errs = [];
+  for (let i = 0; i < tries.length; i++) {
+    try { return { v: events(await get(base + tries[i])), via: i + 1 }; }
+    catch (e) { errs.push('#' + (i + 1) + ' ' + e.message); }
+  }
+  throw new Error(errs.join(' | '));
 }
 function groups(j) {
   const ch = j.children && j.children.length ? j.children : [j];
@@ -63,18 +74,17 @@ function forTeam(t, evs) {
 
 module.exports = async (req, res) => {
   const errors = [], now = Date.now();
-  const rng = ymd(new Date(now - 45 * 864e5)) + '-' + ymd(new Date(now + 120 * 864e5));
   const keys = Object.keys(LG);
   const jobs = [];
   for (const k of keys) {
     jobs.push(get(`${B}v2/sports/soccer/${LG[k]}/standings`).then(j => ({ k, kind: 's', v: groups(j) })));
-    jobs.push(get(`${B}site/v2/sports/soccer/${LG[k]}/scoreboard?dates=${rng}&limit=1000`).then(j => ({ k, kind: 'e', v: events(j) })));
+    jobs.push(board(LG[k], now).then(o => ({ k, kind: 'e', v: o.v, via: o.via })));
   }
   const rs = await Promise.allSettled(jobs);
-  const S = {}, E = {};
+  const S = {}, E = {}, via = {};
   rs.forEach((r, i) => {
     const k = keys[Math.floor(i / 2)], kind = i % 2 ? 'partite' : 'classifica';
-    if (r.status === 'fulfilled') (r.value.kind === 's' ? S : E)[k] = r.value.v;
+    if (r.status === 'fulfilled') { const o = r.value; (o.kind === 's' ? S : E)[k] = o.v; if (o.via) via[k] = o.via; }
     else errors.push(`${TIT[k]} ${kind}: ${r.reason && r.reason.message}`);
   });
 
@@ -85,7 +95,7 @@ module.exports = async (req, res) => {
     let pick = null;
     for (const t of TEAMS) {
       const g = gs.find(g => g.rows.some(r => t.re.test(r.raw)));
-      if (g) { pick = pick || g; mine.push(t.name); }
+      if (g) { pick = pick || g; mine.push(g.rows.find(r => t.re.test(r.raw)).n); }
     }
     const g = pick || gs[0];
     tables[k] = { title: TIT[k], mine, rows: g.rows.map(r => [r.rk, r.n, r.pts, r.pl]) };
@@ -116,5 +126,5 @@ module.exports = async (req, res) => {
     if (t.last && now - new Date(t.last.t).getTime() < 3 * 3600e3) ttl = Math.min(ttl, 300);
   }
   res.setHeader('cache-control', `public, max-age=0, s-maxage=${ttl}, stale-while-revalidate=${Math.min(ttl, 300)}`);
-  res.status(200).json({ src: 'ESPN', ts: new Date(now).toISOString(), ttl, teams, tables, errors });
+  res.status(200).json({ src: 'ESPN', ts: new Date(now).toISOString(), ttl, via, teams, tables, errors });
 };
