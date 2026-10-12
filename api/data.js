@@ -1,8 +1,8 @@
 // Dati reali via ESPN (JSON non ufficiale, senza chiave).
 // La cache di Vercel segue il calendario: poche chiamate fuori dalle partite, una al minuto durante.
 const B = 'https://site.api.espn.com/apis/';
-const LG = { A: 'ita.1', B: 'ita.2', N: 'uefa.nations' };
-const TIT = { A: 'Serie A', B: 'Serie B', N: 'Nations League' };
+const LG = { A: 'ita.1', B: 'ita.2', N: 'uefa.nations', C: 'uefa.champions' };
+const TIT = { A: 'Serie A', B: 'Serie B', N: 'Nations League', C: 'Champions League' };
 const TEAMS = [
   { id: 'inter', name: 'Inter', re: /^inter(?!\s*miami)|internazionale/i },
   { id: 'palermo', name: 'Palermo', re: /palermo/i },
@@ -56,7 +56,7 @@ async function board(lg, now) {
   const tries = [''];
   const errs = [];
   for (let i = 0; i < tries.length; i++) {
-    try { return { v: events(await get(base + tries[i])), via: i + 1 }; }
+    try { return { v: events(await get(base + tries[i])).map(e => Object.assign(e, { comp: TIT[Object.keys(LG).find(x => LG[x] === lg)] })), via: i + 1 }; }
     catch (e) { errs.push('#' + (i + 1) + ' ' + e.message); }
   }
   throw new Error(errs.join(' | '));
@@ -99,13 +99,13 @@ function forTeam(t, evs) {
   const view = e => {
     const me = e.cs.find(c => t.re.test(c.raw));
     const op = e.cs.find(c => c !== me) || {};
-    return { t: e.t, home: me.home, opp: nm(op.raw || '?'), sc: me.sc, osc: op.sc, clock: e.clock };
+    return { t: e.t, home: me.home, opp: nm(op.raw || '?'), sc: me.sc, osc: op.sc, clock: e.clock, comp: e.comp };
   };
   const by = s => mine.filter(e => e.state === s).sort((a, b) => new Date(a.t) - new Date(b.t)).map(view);
   const pre = by('pre').filter(x => new Date(x.t).getTime() > Date.now() - 3 * 3600e3), post = by('post'), inn = by('in');
   const out = {};
-  if (pre[0]) out.next = { t: pre[0].t, home: pre[0].home, opp: pre[0].opp };
-  out.more = pre.slice(1, 4).map(x => ({ t: x.t, home: x.home, opp: x.opp }));
+  if (pre[0]) out.next = { t: pre[0].t, home: pre[0].home, opp: pre[0].opp, comp: pre[0].comp };
+  out.more = pre.slice(1, 4).map(x => ({ t: x.t, home: x.home, opp: x.opp, comp: x.comp }));
   if (post.length) {
     const l = post[post.length - 1];
     out.last = { t: l.t, home: l.home, opp: l.opp, score: l.sc + '-' + l.osc, res: l.sc > l.osc ? 'V' : l.sc < l.osc ? 'P' : 'N' };
@@ -166,7 +166,7 @@ module.exports = async (req, res) => {
   });
   const dbg = TEAMS.map(t => `${t.name}: ESPN ${tot[t.id] == null ? '–' : tot[t.id]}${tsn[t.id] != null ? ', TSDB ' + tsn[t.id] : ''} → ${nf(t)} future`);
   for (const t of TEAMS) {
-    const o = { id: t.id, name: t.name };
+    const o = { id: t.id, name: t.name, comps: keys.filter(k => tables[k] && tables[k].mine.includes(t.name)) };
     for (const k of keys) {
       const g = S[k] && S[k].find(g => g.rows.some(r => t.re.test(r.raw)));
       const r = g && g.rows.find(r => t.re.test(r.raw));
