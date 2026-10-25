@@ -38,26 +38,48 @@ function tsdbTeam(t) {
     throw new Error('squadra non trovata');
   })().catch(e => { delete tsTeam[t.id]; throw e; });
 }
+const tsSc = x => x == null || x === '' ? null : Number(x);
+function tsEv(e) {
+  const ts = e.strTimestamp ? String(e.strTimestamp).replace(' ', 'T') : e.dateEvent + 'T' + (e.strTime || '00:00:00');
+  const h = tsSc(e.intHomeScore), a = tsSc(e.intAwayScore), done = h != null && a != null;
+  return { t: ts + (/[zZ]$|[+-]\d\d:?\d\d$/.test(ts) ? '' : 'Z'), state: done ? 'post' : 'pre', clock: '', comp: nm(e.strLeague || ''),
+    cs: [{ raw: e.strHomeTeam, home: true, sc: h }, { raw: e.strAwayTeam, home: false, sc: a }] };
+}
+// Classifica calcolata dai risultati della stagione (punti, differenza reti, gol fatti).
+function fromResults(evs) {
+  const T = {};
+  const row = n => T[n] = T[n] || { raw: n, n: nm(n), pts: 0, pl: 0, w: 0, d: 0, l: 0, gf: 0, gd: 0, nc: null, nd: null };
+  for (const e of evs) {
+    const [h, a] = e.cs; row(h.raw); row(a.raw);
+    if (e.state !== 'post') continue;
+    for (const [x, y] of [[h, a], [a, h]]) {
+      const r = T[x.raw]; r.pl++; r.gf += x.sc; r.gd += x.sc - y.sc;
+      if (x.sc > y.sc) { r.w++; r.pts += 3; } else if (x.sc === y.sc) { r.d++; r.pts++; } else r.l++;
+    }
+  }
+  return Object.values(T).sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.n.localeCompare(b.n)).map((r, i) => Object.assign(r, { rk: i + 1 }));
+}
 // Classifica di riserva quando ESPN non copre il campionato della squadra.
+// Con la chiave gratuita lookuptable dà solo le prime 5: se i risultati coprono più squadre, uso quelli.
 async function tsdbTable(t, now) {
   const tm = await tsdbTeam(t);
   const d = new Date(now), y = d.getUTCFullYear(), s = d.getUTCMonth() >= 6 ? y + '-' + (y + 1) : (y - 1) + '-' + y;
-  const j = await tsdb('lookuptable.php?l=' + tm.idLeague + '&s=' + s);
-  const rows = (j.table || []).map(r => ({ raw: r.strTeam, n: nm(r.strTeam), rk: +r.intRank, pts: +r.intPoints, pl: +r.intPlayed,
-    w: +r.intWin, d: +r.intDraw, l: +r.intLoss, gd: +r.intGoalDifference, nc: null, nd: null })).sort((a, b) => a.rk - b.rk);
-  if (!rows.length) throw new Error('classifica vuota');
-  return { title: nm(tm.strLeague), rows };
+  const q = '?l=' + tm.idLeague + '&s=' + s;
+  const [lt, se] = await Promise.allSettled([tsdb('lookuptable.php' + q), tsdb('eventsseason.php' + q)]);
+  const ev = se.status === 'fulfilled' ? (se.value.events || []).map(tsEv) : [];
+  let rows = lt.status === 'fulfilled' ? (lt.value.table || []).map(r => ({ raw: r.strTeam, n: nm(r.strTeam), rk: +r.intRank, pts: +r.intPoints, pl: +r.intPlayed,
+    w: +r.intWin, d: +r.intDraw, l: +r.intLoss, gd: +r.intGoalDifference, nc: null, nd: null })).sort((a, b) => a.rk - b.rk) : [];
+  const calc = fromResults(ev);
+  // solo se i risultati sono completi: le squadre della tabella devono avere gli stessi punti
+  const ok = rows.every(r => { const c = calc.find(c => c.raw === r.raw); return c && c.pts === r.pts && c.pl === r.pl; });
+  if (calc.length > rows.length && calc.some(r => r.pl) && ok) rows = calc;
+  if (!rows.length) throw new Error('classifica vuota' + (lt.status === 'rejected' ? ': ' + lt.reason.message : ''));
+  return { title: nm(tm.strLeague), rows, ev, src: rows === calc ? 'risultati' : 'tabella' };
 }
 async function tsdbNext(t) {
   const tm = await tsdbTeam(t);
   const [n, l] = await Promise.all([tsdb('eventsnext.php?id=' + tm.idTeam), tsdb('eventslast.php?id=' + tm.idTeam).catch(() => ({}))]);
-  const sc = x => x == null || x === '' ? null : Number(x);
-  return (n.events || []).concat(l.results || []).map(e => {
-    const ts = e.strTimestamp ? String(e.strTimestamp).replace(' ', 'T') : e.dateEvent + 'T' + (e.strTime || '00:00:00');
-    const h = sc(e.intHomeScore), a = sc(e.intAwayScore), done = h != null && a != null;
-    return { t: ts + (/[zZ]$|[+-]\d\d:?\d\d$/.test(ts) ? '' : 'Z'), state: done ? 'post' : 'pre', clock: '', comp: e.strLeague,
-      cs: [{ raw: e.strHomeTeam, home: true, sc: h }, { raw: e.strAwayTeam, home: false, sc: a }] };
-  });
+  return (n.events || []).concat(l.results || []).map(tsEv);
 }
 // Programma di una squadra: giocate (schedule) + future (schedule?fixture=true, tutte le competizioni).
 async function sched(lg, id) {
@@ -168,11 +190,13 @@ module.exports = async (req, res) => {
   let evs = [].concat(...Object.values(E));
   // Squadre senza classifica ESPN: provo TheSportsDB (es. Challenge League)
   const miss = TEAMS.filter(t => !keys.some(k => S[k] && S[k].some(g => g.rows.some(r => t.re.test(r.raw)))));
+  const xsrc = {};
   const xt = await Promise.allSettled(miss.map(t => tsdbTable(t, now)));
   miss.forEach((t, i) => {
     if (xt[i].status === 'rejected') return errors.push(`Classifica ${t.name} (TheSportsDB): ${xt[i].reason && xt[i].reason.message}`);
     const k = 'X' + t.id, v = xt[i].value, me = v.rows.find(r => t.re.test(r.raw));
     if (!me) return errors.push(`Classifica ${t.name} (TheSportsDB): squadra assente in ${v.title}`);
+    evs = evs.concat(v.ev); xsrc[t.id] = v.src + ' ' + v.rows.length + ' squadre';
     keys.push(k); TIT[k] = v.title; S[k] = [{ name: v.title, rows: v.rows }];
     tables[k] = { title: v.title, mine: [me.n], rows: v.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
   });
@@ -196,7 +220,7 @@ module.exports = async (req, res) => {
     if (tj[i].status === 'fulfilled') { evs = evs.concat(tj[i].value); tsn[t.id] = tj[i].value.length; }
     else { tsn[t.id] = 'err'; errors.push(`Calendario ${t.name} (TheSportsDB): ${tj[i].reason && tj[i].reason.message}`); }
   });
-  const dbg = TEAMS.map(t => `${t.name}: ESPN ${tot[t.id] == null ? '–' : tot[t.id]}${tsn[t.id] != null ? ', TSDB ' + tsn[t.id] : ''} → ${nf(t)} future`);
+  const dbg = TEAMS.map(t => `${t.name}: ESPN ${tot[t.id] == null ? '–' : tot[t.id]}${tsn[t.id] != null ? ', TSDB ' + tsn[t.id] : ''}${xsrc[t.id] ? ", classifica da " + xsrc[t.id] : ""} → ${nf(t)} future`);
   for (const t of TEAMS) {
     const o = { id: t.id, name: t.name, comps: keys.filter(k => tables[k] && tables[k].mine.includes(t.name)) };
     for (const k of keys) {
