@@ -200,7 +200,7 @@ module.exports = async (req, res) => {
     if (!me) return errors.push(`Classifica ${t.name} (TheSportsDB): squadra assente in ${v.title}`);
     evs = evs.concat(v.ev); xsrc[t.id] = v.src + ' ' + v.rows.length + ' squadre';
     keys.push(k); TIT[k] = v.title; S[k] = [{ name: v.title, rows: v.rows }];
-    tables[k] = { title: v.title, mine: [me.n], rows: v.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
+    tables[k] = { title: v.title, mine: [me.n], part: v.src === 'tabella' ? t.name : undefined, rows: v.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
   });
   const tid = {};
   for (const t of TEAMS) for (const k of keys) {

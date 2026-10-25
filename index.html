@@ -55,7 +55,7 @@ tr.me td{background:color-mix(in srgb,var(--tc) 24%,transparent);font-weight:700
 .tm-inter{--tc:#2563eb}.tm-palermo{--tc:#ec4899}.tm-italia{--tc:#0ea5e9}.tm-winterthur{--tc:#dc2626}
 td:last-child{font-weight:700}
 .lg{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 4px 0;font-size:11px;color:var(--mu)}
-.lg b{color:var(--tx)}
+.lg b{color:var(--tx)}.lg a{color:var(--tc,#3b82f6);font-weight:600}
 .lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 /* dettaglio squadra */
 .dh{padding:0 4px 4px;font-size:15px}.dh b{color:var(--c1)}
@@ -122,6 +122,7 @@ function table(){
    return `<tr class="${m?'me tm-'+m.id:''}"><td${c?` style="box-shadow:inset 3px 0 0 ${c}"`:''}>${r[0]}</td><td>${r[1]}</td><td>${v(r[3])}</td><td>${v(r[4])}</td><td>${v(r[5])}</td><td>${v(r[6])}</td><td>${r[7]==null?'':(r[7]>0?'+':'')+r[7]}</td><td>${v(r[2])}</td></tr>`}).join('');
  const z={};tb.rows.forEach(r=>{if(r[8]&&r[9])z[r[9]]=col(r[8])});
  $('lg').innerHTML=Object.entries(z).map(([d,c])=>`<span><i style="background:${c}"></i>${d}</span>`).join('');
+ if(tb.part)$('lg').innerHTML+=`<span>Solo le prime ${tb.rows.length} · <a href="${gq(t)}" target="_blank" rel="noopener">classifica completa su Google ↗</a></span>`;
 }
 function detail(){
  const s=D.teams.find(x=>x.id===sel)||D.teams[0];if(!s){$('dt').innerHTML='';return}
