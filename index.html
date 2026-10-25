@@ -19,8 +19,9 @@ main{padding:12px 10px 28px;max-width:560px;margin:auto}
 .tm-inter{--c1:#2563eb;--ink:#fff;--band:repeating-linear-gradient(90deg,#0a0a12 0 11px,#1d4ed8 11px 22px)}
 .tm-palermo{--c1:#ec4899;--ink:#4a0d2a;--band:linear-gradient(135deg,#fbcfe8,#f472b6)}
 .tm-italia{--c1:#0ea5e9;--ink:#04243a;--band:linear-gradient(135deg,#bae6fd,#38bdf8)}
+.tm-winterthur{--c1:#dc2626;--ink:#fff;--band:linear-gradient(135deg,#ef4444,#b91c1c)}
 /* card squadre in orizzontale */
-.mt{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.mt{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px}
 .mc{background:var(--card);border:2px solid var(--ln);border-radius:14px;overflow:hidden;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0}
 .mc[aria-pressed=true]{border-color:var(--c1);box-shadow:0 0 0 2px color-mix(in srgb,var(--c1) 30%,transparent)}
 .band{background:var(--band);color:var(--ink);padding:7px 8px}
@@ -51,7 +52,7 @@ td:first-child,th:first-child{text-align:center;width:28px}
 th{color:var(--mu);font-weight:500;font-size:11px;border-bottom:1px solid var(--ln)}
 td{border-bottom:1px solid color-mix(in srgb,var(--ln) 55%,transparent)}
 tr.me td{background:color-mix(in srgb,var(--tc) 24%,transparent);font-weight:700}
-.tm-inter{--tc:#2563eb}.tm-palermo{--tc:#ec4899}.tm-italia{--tc:#0ea5e9}
+.tm-inter{--tc:#2563eb}.tm-palermo{--tc:#ec4899}.tm-italia{--tc:#0ea5e9}.tm-winterthur{--tc:#dc2626}
 td:last-child{font-weight:700}
 .lg{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 4px 0;font-size:11px;color:var(--mu)}
 .lg b{color:var(--tx)}
@@ -81,10 +82,12 @@ const DAY=864e5,iso=ms=>new Date(Date.now()+ms).toISOString();
 const DEMO={src:'demo',teams:[
  {id:'inter',name:'Inter',league:'Serie A',pos:1,pts:22,form:['V','V','N','V','V'],next:{t:iso(2*DAY),home:true,opp:'Parma'},more:[{t:iso(9*DAY),home:false,opp:'Lecce'}],last:{res:'V',score:'2-0',opp:'Como'}},
  {id:'palermo',name:'Palermo',league:'Serie B',pos:3,pts:17,form:['V','N','V','P','V'],live:{score:'1-0',clock:"34'",opp:'Bari'},next:{t:iso(7*DAY),home:false,opp:'Spezia'},more:[],last:{res:'N',score:'1-1',opp:'Cesena'}},
- {id:'italia',name:'Italia',league:'Nations League',pos:1,pts:6,form:['V','V','P','V','N'],next:{t:iso(9*DAY),home:true,opp:'Francia'},more:[],last:{res:'V',score:'3-1',opp:'Israele'}}],
+ {id:'italia',name:'Italia',league:'Nations League',pos:1,pts:6,form:['V','V','P','V','N'],next:{t:iso(9*DAY),home:true,opp:'Francia'},more:[],last:{res:'V',score:'3-1',opp:'Israele'}},
+ {id:'winterthur',name:'Winterthur',league:'Super League',pos:9,pts:11,form:['P','N','V','P','N'],next:{t:iso(3*DAY),home:true,opp:'Basilea'},more:[],last:{res:'N',score:'1-1',opp:'Lugano'}}],
  tables:{A:{title:'Serie A',mine:['Inter'],rows:[[1,'Inter',22,8,7,1,0,14,'#81D6AC','Champions League'],[2,'Napoli',20,8,6,2,0,9,'#81D6AC','Champions League'],[3,'Juventus',18,8,5,3,0,6,null,null],[4,'Milan',17,8,5,2,1,5,null,null]]},
   B:{title:'Serie B',mine:['Palermo'],rows:[[1,'Venezia',19,8,6,1,1,9,'#81D6AC','Promozione'],[2,'Monza',18,8,5,3,0,7,'#81D6AC','Promozione'],[3,'Palermo',17,8,5,2,1,6,null,null],[4,'Bari',15,8,4,3,1,3,null,null]]},
-  N:{title:'Nations League',mine:['Italia'],rows:[[1,'Italia',6,3,2,0,1,3,null,null],[2,'Francia',4,3,1,1,1,0,null,null],[3,'Belgio',3,3,1,0,2,-1,null,null],[4,'Israele',0,3,0,0,3,-5,null,null]]}}};
+  N:{title:'Nations League',mine:['Italia'],rows:[[1,'Italia',6,3,2,0,1,3,null,null],[2,'Francia',4,3,1,1,1,0,null,null],[3,'Belgio',3,3,1,0,2,-1,null,null],[4,'Israele',0,3,0,0,3,-5,null,null]]},
+  S:{title:'Super League',mine:['Winterthur'],rows:[[8,'Lucerna',12,11,3,3,5,-3,null,null],[9,'Winterthur',11,11,2,5,4,-6,null,null],[10,'Grasshoppers',9,11,2,3,6,-8,null,null]]}}};
 let D=DEMO,err='',sel=null,cmp=null,last=0;
 const $=id=>document.getElementById(id);
 const g=q=>'https://www.google.com/search?q='+encodeURIComponent(q);

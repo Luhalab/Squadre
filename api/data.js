@@ -1,14 +1,15 @@
 // Dati reali via ESPN (JSON non ufficiale, senza chiave).
 // La cache di Vercel segue il calendario: poche chiamate fuori dalle partite, una al minuto durante.
 const B = 'https://site.api.espn.com/apis/';
-const LG = { A: 'ita.1', B: 'ita.2', N: 'uefa.nations', C: 'uefa.champions' };
-const TIT = { A: 'Serie A', B: 'Serie B', N: 'Nations League', C: 'Champions League' };
+const LG = { A: 'ita.1', B: 'ita.2', N: 'uefa.nations', C: 'uefa.champions', S: 'sui.1' };
+const TIT = { A: 'Serie A', B: 'Serie B', N: 'Nations League', C: 'Champions League', S: 'Super League' };
 const TEAMS = [
   { id: 'inter', name: 'Inter', re: /^inter(?!\s*miami)|internazionale/i },
   { id: 'palermo', name: 'Palermo', re: /palermo/i },
   { id: 'italia', name: 'Italia', re: /^(italy|italia)$/i },
+  { id: 'winterthur', name: 'Winterthur', re: /winterthur/i },
 ];
-const IT = { 'Inter Milan': 'Inter', Internazionale: 'Inter', 'AS Roma': 'Roma', 'AC Milan': 'Milan', Italy: 'Italia', France: 'Francia', Germany: 'Germania', Spain: 'Spagna', Belgium: 'Belgio', Israel: 'Israele', Netherlands: 'Paesi Bassi', Portugal: 'Portogallo', Switzerland: 'Svizzera', England: 'Inghilterra', Croatia: 'Croazia', Denmark: 'Danimarca', Norway: 'Norvegia', Sweden: 'Svezia', Poland: 'Polonia', Turkey: 'Turchia', Greece: 'Grecia', Czechia: 'Rep. Ceca', 'Czech Republic': 'Rep. Ceca', Scotland: 'Scozia', Wales: 'Galles', Ireland: 'Irlanda', 'Republic of Ireland': 'Irlanda', Hungary: 'Ungheria', Ukraine: 'Ucraina', Slovakia: 'Slovacchia', 'Bosnia and Herzegovina': 'Bosnia', 'North Macedonia': 'Macedonia N.', Finland: 'Finlandia', Iceland: 'Islanda' };
+const IT = { 'FC Winterthur': 'Winterthur', 'Inter Milan': 'Inter', Internazionale: 'Inter', 'AS Roma': 'Roma', 'AC Milan': 'Milan', Italy: 'Italia', France: 'Francia', Germany: 'Germania', Spain: 'Spagna', Belgium: 'Belgio', Israel: 'Israele', Netherlands: 'Paesi Bassi', Portugal: 'Portogallo', Switzerland: 'Svizzera', England: 'Inghilterra', Croatia: 'Croazia', Denmark: 'Danimarca', Norway: 'Norvegia', Sweden: 'Svezia', Poland: 'Polonia', Turkey: 'Turchia', Greece: 'Grecia', Czechia: 'Rep. Ceca', 'Czech Republic': 'Rep. Ceca', Scotland: 'Scozia', Wales: 'Galles', Ireland: 'Irlanda', 'Republic of Ireland': 'Irlanda', Hungary: 'Ungheria', Ukraine: 'Ucraina', Slovakia: 'Slovacchia', 'Bosnia and Herzegovina': 'Bosnia', 'North Macedonia': 'Macedonia N.', Finland: 'Finlandia', Iceland: 'Islanda' };
 const nm = n => IT[n] || n;
 const UA = { 'user-agent': 'Mozilla/5.0 (Squadre app personale)' };
 const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
@@ -20,7 +21,7 @@ async function get(url) {
   return r.json();
 }
 const TSDB = 'https://www.thesportsdb.com/api/v1/json/';
-const TQ = { inter: ['Inter Milan', 'Inter', 'Internazionale'], palermo: ['Palermo'], italia: ['Italy'] };
+const TQ = { inter: ['Inter Milan', 'Inter', 'Internazionale'], palermo: ['Palermo'], italia: ['Italy'], winterthur: ['FC Winterthur', 'Winterthur'] };
 async function tsdb(path) {
   let e;
   for (const k of ['3', '123']) { try { return await get(TSDB + k + '/' + path); } catch (x) { e = x; } }
