@@ -7,7 +7,7 @@ const TEAMS = [
   { id: 'inter', name: 'Inter', re: /^inter(?!\s*miami)|internazionale/i },
   { id: 'palermo', name: 'Palermo', re: /palermo/i },
   { id: 'italia', name: 'Italia', re: /^(italy|italia)$/i },
-  { id: 'winterthur', name: 'Winterthur', re: /winterthur/i },
+  { id: 'winterthur', name: 'Winterthur', re: /winterthur/i, tt: true }, // tt: Teletext svizzero
 ];
 const IT = { 'FC Winterthur': 'Winterthur', 'Swiss Challenge League': 'Challenge League', 'Swiss Super League': 'Super League', 'Inter Milan': 'Inter', Internazionale: 'Inter', 'AS Roma': 'Roma', 'AC Milan': 'Milan', Italy: 'Italia', France: 'Francia', Germany: 'Germania', Spain: 'Spagna', Belgium: 'Belgio', Israel: 'Israele', Netherlands: 'Paesi Bassi', Portugal: 'Portogallo', Switzerland: 'Svizzera', England: 'Inghilterra', Croatia: 'Croazia', Denmark: 'Danimarca', Norway: 'Norvegia', Sweden: 'Svezia', Poland: 'Polonia', Turkey: 'Turchia', Greece: 'Grecia', Czechia: 'Rep. Ceca', 'Czech Republic': 'Rep. Ceca', Scotland: 'Scozia', Wales: 'Galles', Ireland: 'Irlanda', 'Republic of Ireland': 'Irlanda', Hungary: 'Ungheria', Ukraine: 'Ucraina', Slovakia: 'Slovacchia', 'Bosnia and Herzegovina': 'Bosnia', 'North Macedonia': 'Macedonia N.', Finland: 'Finlandia', Iceland: 'Islanda' };
 const nm = n => IT[n] || n;
@@ -82,6 +82,78 @@ async function tsdbNext(t) {
   const [n, l] = await Promise.all([tsdb('eventsnext.php?id=' + tm.idTeam), tsdb('eventslast.php?id=' + tm.idTeam).catch(() => ({}))]);
   const A = x => Array.isArray(x) ? x : [];
   return A(n.events).concat(A(l.results)).map(tsEv);
+}
+// Teletext svizzero (SRF): 202 partite del turno, 203/204 classifiche SL/ChL, 217 prossimo turno.
+// Pagine di 40 colonne in base64; i codici di controllo diventano spazi, set nazionale tedesco per le lettere accentate.
+const TT = 'https://api.teletext.ch/channels/SRF1/pages/';
+const TTCH = { '{': 'ä', '|': 'ö', '}': 'ü', '[': 'Ä', '\\': 'Ö', ']': 'Ü', '~': 'ß' };
+const TTN = { 'Stade LS': 'Stade Lausanne-Ouchy', 'Et.Carouge': 'Étoile Carouge', 'S.Nyonnais': 'Stade Nyonnais', Xamax: 'Neuchâtel Xamax',
+  Rapperswil: 'Rapperswil-Jona', YB: 'Young Boys', GC: 'Grasshoppers', 'St.Gallen': 'San Gallo', Zürich: 'Zurigo', Basel: 'Basilea',
+  Luzern: 'Lucerna', Lausanne: 'Losanna', Servette: 'Servette', Thun: 'Thun' };
+const ttn = n => TTN[n.trim()] || n.trim();
+async function ttPage(n) {
+  const j = await get(TT + n);
+  const c = j.subpages && j.subpages[0] && j.subpages[0].ep1Info.data.ep1Format.content;
+  if (!c) throw new Error('pagina ' + n + ' vuota');
+  const txt = Array.from(Buffer.from(c, 'base64'), b => { b &= 127; const ch = String.fromCharCode(b); return b < 32 ? ' ' : TTCH[ch] || ch; }).join('');
+  return txt.match(/.{1,40}/g);
+}
+// Ora svizzera -> ISO UTC
+function zurich(y, mo, d, h, mi) {
+  const g = Date.UTC(y, mo - 1, d, h, mi);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Zurich', hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })
+    .formatToParts(new Date(g)).map(x => [x.type, +x.value]));
+  return new Date(2 * g - Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute)).toISOString();
+}
+function ttTable(lines) {
+  const h = lines.map(l => /Klassement (SL|ChL)/.exec(l)).find(Boolean);
+  if (!h) return null;
+  const rows = [], seps = [];
+  for (const l of lines) {
+    if (/^\s*-{10,}/.test(l)) { seps.push(rows.length); continue; }
+    const m = /^\s*(\d+)\.\s(.{10})\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+):\s*(\d+)\s+(\d+)/.exec(l);
+    if (m) rows.push({ raw: m[2].trim(), n: ttn(m[2]), rk: +m[1], pl: +m[3], w: +m[4], d: +m[5], l: +m[6], gd: m[7] - m[8], pts: +m[9], nc: null, nd: null });
+  }
+  if (h[1] === 'ChL' && seps.length >= 2) {
+    // ChL: 1ª promossa, 2ª spareggio, ultima sotto l'ultimo separatore retrocede
+    rows.slice(0, seps[0]).forEach(r => { r.nc = '#81D6AC'; r.nd = 'Promozione'; });
+    rows.slice(seps[0], seps[1]).forEach(r => { r.nc = '#B5E7CE'; r.nd = 'Spareggio promozione'; });
+    if (seps[seps.length - 1] > seps[1]) rows.slice(seps[seps.length - 1]).forEach(r => { r.nc = '#FF7F84'; r.nd = 'Retrocessione'; });
+  }
+  return { title: h[1] === 'SL' ? 'Super League' : 'Challenge League', rows };
+}
+// Partite di un turno: pagina 202 (risultati, * = in corso) o 217 (giorno e ora)
+function ttGames(lines, now) {
+  const out = [];
+  let comp = '', y = new Date(now).getUTCFullYear(), rg = null;
+  for (const l of lines) {
+    const rm = /Spiele \((\d\d)\.(?:(\d\d)\.)?-(\d\d)\.(\d\d)\.\)/.exec(l);
+    if (rm) rg = { d0: +rm[1], m0: +(rm[2] || rm[4]), d1: +rm[3], m1: +rm[4] };
+    const cm = /(Super|Challenge) League/.exec(l);
+    if (cm && !/ - /.test(l)) { comp = cm[0]; continue; }
+    const g = /^\s*(.+?)\s+-\s+(.+?)\s+(?:(\*)\s*)?(\d+):(\d+)/.exec(l);
+    if (g) { out.push({ t: new Date(now).toISOString(), state: g[3] ? 'in' : 'done', clock: '', comp, cs: [{ raw: g[1], home: true, sc: +g[4] }, { raw: g[2], home: false, sc: +g[5] }] }); continue; }
+    const f = /^\s*(.+?)\s+-\s+(.+?)\s+(MO|DI|MI|DO|FR|SA|SO)\s+(\d\d)\.(\d\d)\s+Uhr/.exec(l);
+    if (f && rg) {
+      const wd = ['SO', 'MO', 'DI', 'MI', 'DO', 'FR', 'SA'].indexOf(f[3]);
+      // anno: quello che mette l'inizio del turno più vicino a oggi
+      const yy = [y - 1, y, y + 1].sort((a, b) => Math.abs(Date.UTC(a, rg.m0 - 1, rg.d0) - now) - Math.abs(Date.UTC(b, rg.m0 - 1, rg.d0) - now))[0];
+      for (let k = 0; k < 7; k++) {
+        const d = new Date(Date.UTC(yy, rg.m0 - 1, rg.d0 + k));
+        if (d.getUTCDay() !== wd) continue;
+        out.push({ t: zurich(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), +f[4], +f[5]), state: 'pre', clock: '', comp, cs: [{ raw: f[1], home: true, sc: null }, { raw: f[2], home: false, sc: null }] });
+        break;
+      }
+    }
+  }
+  return out.filter(e => e.state !== 'done').map(e => Object.assign(e, { cs: e.cs.map(c => Object.assign(c, { raw: ttn(c.raw) })) }));
+}
+async function teletext(now) {
+  const [a, b, live, nx] = await Promise.allSettled([203, 204, 202, 217].map(ttPage));
+  const tables = [a, b].filter(x => x.status === 'fulfilled').map(x => ttTable(x.value)).filter(Boolean);
+  const ev = [live, nx].filter(x => x.status === 'fulfilled').flatMap(x => ttGames(x.value, now));
+  if (!tables.length && !ev.length) throw (a.reason || new Error('nessun dato'));
+  return { tables, ev };
 }
 // Programma di una squadra: giocate (schedule) + future (schedule?fixture=true, tutte le competizioni).
 async function sched(lg, id) {
@@ -190,9 +262,24 @@ module.exports = async (req, res) => {
     tables[k] = { title: TIT[k], mine, rows: g.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
   }
   let evs = [].concat(...Object.values(E));
-  // Squadre senza classifica ESPN: provo TheSportsDB (es. Challenge League)
-  const miss = TEAMS.filter(t => !keys.some(k => S[k] && S[k].some(g => g.rows.some(r => t.re.test(r.raw)))));
   const xsrc = {};
+  const has = t => keys.some(k => S[k] && S[k].some(g => g.rows.some(r => t.re.test(r.raw))));
+  // Teletext svizzero per le squadre segnate tt
+  if (TEAMS.some(t => t.tt)) {
+    try {
+      const tx = await teletext(now);
+      evs = evs.concat(tx.ev);
+      for (const t of TEAMS.filter(t => t.tt && !has(t))) {
+        const v = tx.tables.find(v => v.rows.some(r => t.re.test(r.raw)));
+        if (!v) continue;
+        const k = 'T' + t.id, me = v.rows.find(r => t.re.test(r.raw));
+        keys.push(k); TIT[k] = v.title; S[k] = [{ name: v.title, rows: v.rows }]; xsrc[t.id] = 'Teletext ' + v.rows.length + ' squadre';
+        tables[k] = { title: v.title, mine: [me.n], rows: v.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
+      }
+    } catch (e) { errors.push('Teletext: ' + e.message); }
+  }
+  // Squadre ancora senza classifica: provo TheSportsDB
+  const miss = TEAMS.filter(t => !has(t));
   const xt = await Promise.allSettled(miss.map(t => tsdbTable(t, now)));
   miss.forEach((t, i) => {
     if (xt[i].status === 'rejected') return errors.push(`Classifica ${t.name} (TheSportsDB): ${xt[i].reason && xt[i].reason.message}`);
