@@ -67,14 +67,7 @@ async function tsdbTable(t, now) {
   const q = '?l=' + tm.idLeague + '&s=' + s;
   const [lt, se] = await Promise.allSettled([tsdb('lookuptable.php' + q), tsdb('eventsseason.php' + q)]);
   const arr = (r, k) => r.status === 'fulfilled' && Array.isArray(r.value[k]) ? r.value[k] : []; // la chiave gratuita può rispondere con un testo
-  let ev = arr(se, 'events').map(tsEv), via = 'stagione';
-  if (!ev.length) {
-    // ripiego: una richiesta per giornata, fino a quella della prossima partita
-    const nx = await tsdb('eventsnext.php?id=' + tm.idTeam).catch(() => ({}));
-    const nr = Math.min(40, +((Array.isArray(nx.events) && nx.events.find(e => e.idLeague === tm.idLeague)) || {}).intRound || 0);
-    const rr = await Promise.allSettled(Array.from({ length: nr }, (_, i) => tsdb('eventsround.php' + q.replace('&', '&r=' + (i + 1) + '&'))));
-    ev = [].concat(...rr.map(r => arr(r, 'events'))).map(tsEv); via = 'giornate ' + nr;
-  }
+  const ev = arr(se, 'events').map(tsEv);
   let rows = arr(lt, 'table').map(r => ({ raw: r.strTeam, n: nm(r.strTeam), rk: +r.intRank, pts: +r.intPoints, pl: +r.intPlayed,
     w: +r.intWin, d: +r.intDraw, l: +r.intLoss, gd: +r.intGoalDifference, nc: null, nd: null })).sort((a, b) => a.rk - b.rk);
   const calc = fromResults(ev);
@@ -82,7 +75,7 @@ async function tsdbTable(t, now) {
   const ok = rows.every(r => { const c = calc.find(c => c.raw === r.raw); return c && c.pts === r.pts && c.pl === r.pl; });
   if (calc.length > rows.length && calc.some(r => r.pl) && ok) rows = calc;
   if (!rows.length) throw new Error('classifica vuota' + (lt.status === 'rejected' ? ': ' + lt.reason.message : ''));
-  return { title: nm(tm.strLeague), rows, ev, src: rows === calc ? 'risultati (' + via + ')' : 'tabella' };
+  return { title: nm(tm.strLeague), rows, ev, src: rows === calc ? 'risultati' : 'tabella' };
 }
 async function tsdbNext(t) {
   const tm = await tsdbTeam(t);

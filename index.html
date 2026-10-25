@@ -98,12 +98,15 @@ const fmt=t=>new Date(t).toLocaleDateString('it-IT',{weekday:'short',day:'numeri
 const sh=t=>{const d=new Date(t);return (d-Date.now())/DAY<6?d.toLocaleDateString('it-IT',{weekday:'short'})+' '+hm(t):d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})};
 const col=c=>c?(c[0]==='#'?c:'#'+c):'';
 const dot=r=>`<span class="rs ${r}">${r}</span>`;
+// squadra senza nessun dato: si ripiega su Google
+const empty=s=>!s.pos&&!s.next&&!s.last&&!s.live;
+const gq=s=>g((s.id==='winterthur'?'FC Winterthur':s.name)+' classifica risultati');
 function cards(){$('mt').innerHTML=D.teams.map(s=>`
 <button class="mc tm-${s.id}" data-id="${s.id}" aria-pressed="${s.id===sel}">
 <div class="band"><b>${s.name}</b><small>${s.league||''}</small></div>
 <div class="mb"><div class="big">${s.pos?s.pos+'°':'–'}<small>${s.pts!=null?s.pts+' pt':''}</small></div>
 ${s.live?`<div class="lv"><span class="dot"></span>${s.live.score} ${s.live.clock||''}</div>`:''}
-<div class="nx">${s.next?`Prossima<br><b>${s.next.opp}</b> · ${sh(s.next.t)}`:'Prossima<br>—'}</div>
+<div class="nx">${empty(s)&&D.src!=='demo'?'Nessun dato<br><b>Vedi su Google ↗</b>':s.next?`Prossima<br><b>${s.next.opp}</b> · ${sh(s.next.t)}`:'Prossima<br>—'}</div>
 <div class="ls">${s.last?dot(s.last.res)+' '+s.last.score:'—'}</div></div></button>`).join('')}
 function table(){
  const T=D.tables||{},t=D.teams.find(x=>x.id===sel)||D.teams[0];
@@ -127,7 +130,7 @@ function detail(){
  $('dt').innerHTML=`<div class="dh"><b>${s.name}</b> · prossime partite</div>`+
   (list.length?list.map(m=>`<div class="pr"><span>${fmt(m.t)}</span><span>${m.opp} ${m.home?'(casa)':'(trasf.)'}${m.comp?`<span class="cp">${m.comp}</span>`:''}</span></div>`).join(''):'<div class="pr"><span>Nessuna partita in programma</span></div>')+
   (s.form&&s.form.length?`<div class="fm">Ultime ${s.form.length}: ${s.form.map(dot).join('')}</div>`:'')+
-  `<a class="live" href="${g(s.name+' partita')}" target="_blank" rel="noopener">Live su Google ↗</a>`;
+  (empty(s)?`<a class="live" href="${gq(s)}" target="_blank" rel="noopener">Classifica e partite su Google ↗</a>`:`<a class="live" href="${g(s.name+' partita')}" target="_blank" rel="noopener">Live su Google ↗</a>`);
 }
 function render(){
  if(!D.teams.some(x=>x.id===sel)){const l=D.teams.find(x=>x.live);sel=(l||D.teams[0]).id}
@@ -144,7 +147,7 @@ async function load(){
  catch(e){D=DEMO;err=e.message;}
  render();
 }
-$('mt').addEventListener('click',e=>{const b=e.target.closest('.mc');if(b){sel=b.dataset.id;cmp=null;cards();table();detail()}});
+$('mt').addEventListener('click',e=>{const b=e.target.closest('.mc');if(b){const s=D.teams.find(x=>x.id===b.dataset.id);if(s&&empty(s)&&D.src!=='demo')window.open(gq(s),'_blank','noopener');sel=b.dataset.id;cmp=null;cards();table();detail()}});
 $('th').addEventListener('change',e=>{if(e.target.id==='cs'){cmp=e.target.value;table()}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-last>60000)load()});
 setInterval(()=>{if(!document.hidden&&D.teams.some(t=>t.live))load()},60000);
