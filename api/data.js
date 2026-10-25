@@ -1,15 +1,15 @@
 // Dati reali via ESPN (JSON non ufficiale, senza chiave).
 // La cache di Vercel segue il calendario: poche chiamate fuori dalle partite, una al minuto durante.
 const B = 'https://site.api.espn.com/apis/';
-const LG = { A: 'ita.1', B: 'ita.2', N: 'uefa.nations', C: 'uefa.champions', S: 'sui.1' };
-const TIT = { A: 'Serie A', B: 'Serie B', N: 'Nations League', C: 'Champions League', S: 'Super League' };
+const LG = { A: 'ita.1', B: 'ita.2', N: 'uefa.nations', C: 'uefa.champions', S: 'sui.1', W: 'sui.2' };
+const TIT = { A: 'Serie A', B: 'Serie B', N: 'Nations League', C: 'Champions League', S: 'Super League', W: 'Challenge League' };
 const TEAMS = [
   { id: 'inter', name: 'Inter', re: /^inter(?!\s*miami)|internazionale/i },
   { id: 'palermo', name: 'Palermo', re: /palermo/i },
   { id: 'italia', name: 'Italia', re: /^(italy|italia)$/i },
   { id: 'winterthur', name: 'Winterthur', re: /winterthur/i },
 ];
-const IT = { 'FC Winterthur': 'Winterthur', 'Inter Milan': 'Inter', Internazionale: 'Inter', 'AS Roma': 'Roma', 'AC Milan': 'Milan', Italy: 'Italia', France: 'Francia', Germany: 'Germania', Spain: 'Spagna', Belgium: 'Belgio', Israel: 'Israele', Netherlands: 'Paesi Bassi', Portugal: 'Portogallo', Switzerland: 'Svizzera', England: 'Inghilterra', Croatia: 'Croazia', Denmark: 'Danimarca', Norway: 'Norvegia', Sweden: 'Svezia', Poland: 'Polonia', Turkey: 'Turchia', Greece: 'Grecia', Czechia: 'Rep. Ceca', 'Czech Republic': 'Rep. Ceca', Scotland: 'Scozia', Wales: 'Galles', Ireland: 'Irlanda', 'Republic of Ireland': 'Irlanda', Hungary: 'Ungheria', Ukraine: 'Ucraina', Slovakia: 'Slovacchia', 'Bosnia and Herzegovina': 'Bosnia', 'North Macedonia': 'Macedonia N.', Finland: 'Finlandia', Iceland: 'Islanda' };
+const IT = { 'FC Winterthur': 'Winterthur', 'Swiss Challenge League': 'Challenge League', 'Swiss Super League': 'Super League', 'Inter Milan': 'Inter', Internazionale: 'Inter', 'AS Roma': 'Roma', 'AC Milan': 'Milan', Italy: 'Italia', France: 'Francia', Germany: 'Germania', Spain: 'Spagna', Belgium: 'Belgio', Israel: 'Israele', Netherlands: 'Paesi Bassi', Portugal: 'Portogallo', Switzerland: 'Svizzera', England: 'Inghilterra', Croatia: 'Croazia', Denmark: 'Danimarca', Norway: 'Norvegia', Sweden: 'Svezia', Poland: 'Polonia', Turkey: 'Turchia', Greece: 'Grecia', Czechia: 'Rep. Ceca', 'Czech Republic': 'Rep. Ceca', Scotland: 'Scozia', Wales: 'Galles', Ireland: 'Irlanda', 'Republic of Ireland': 'Irlanda', Hungary: 'Ungheria', Ukraine: 'Ucraina', Slovakia: 'Slovacchia', 'Bosnia and Herzegovina': 'Bosnia', 'North Macedonia': 'Macedonia N.', Finland: 'Finlandia', Iceland: 'Islanda' };
 const nm = n => IT[n] || n;
 const UA = { 'user-agent': 'Mozilla/5.0 (Squadre app personale)' };
 const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
@@ -27,15 +27,36 @@ async function tsdb(path) {
   for (const k of ['3', '123']) { try { return await get(TSDB + k + '/' + path); } catch (x) { e = x; } }
   throw e;
 }
+const tsTeam = {};
+function tsdbTeam(t) {
+  return tsTeam[t.id] = tsTeam[t.id] || (async () => {
+    for (const n of TQ[t.id]) {
+      const q = await tsdb('searchteams.php?t=' + encodeURIComponent(n));
+      const c = (q.teams || []).filter(x => x.strSport === 'Soccer' && TQ[t.id].includes(x.strTeam));
+      if (c.length) return c[0];
+    }
+    throw new Error('squadra non trovata');
+  })().catch(e => { delete tsTeam[t.id]; throw e; });
+}
+// Classifica di riserva quando ESPN non copre il campionato della squadra.
+async function tsdbTable(t, now) {
+  const tm = await tsdbTeam(t);
+  const d = new Date(now), y = d.getUTCFullYear(), s = d.getUTCMonth() >= 6 ? y + '-' + (y + 1) : (y - 1) + '-' + y;
+  const j = await tsdb('lookuptable.php?l=' + tm.idLeague + '&s=' + s);
+  const rows = (j.table || []).map(r => ({ raw: r.strTeam, n: nm(r.strTeam), rk: +r.intRank, pts: +r.intPoints, pl: +r.intPlayed,
+    w: +r.intWin, d: +r.intDraw, l: +r.intLoss, gd: +r.intGoalDifference, nc: null, nd: null })).sort((a, b) => a.rk - b.rk);
+  if (!rows.length) throw new Error('classifica vuota');
+  return { title: nm(tm.strLeague), rows };
+}
 async function tsdbNext(t) {
-  const q = await tsdb('searchteams.php?t=' + encodeURIComponent(TQ[t.id][0]));
-  const c = (q.teams || []).filter(x => x.strSport === 'Soccer' && TQ[t.id].includes(x.strTeam));
-  if (!c.length) throw new Error('squadra non trovata');
-  const j = await tsdb('eventsnext.php?id=' + c[0].idTeam);
-  return (j.events || []).map(e => {
+  const tm = await tsdbTeam(t);
+  const [n, l] = await Promise.all([tsdb('eventsnext.php?id=' + tm.idTeam), tsdb('eventslast.php?id=' + tm.idTeam).catch(() => ({}))]);
+  const sc = x => x == null || x === '' ? null : Number(x);
+  return (n.events || []).concat(l.results || []).map(e => {
     const ts = e.strTimestamp ? String(e.strTimestamp).replace(' ', 'T') : e.dateEvent + 'T' + (e.strTime || '00:00:00');
-    return { t: ts + (/[zZ]$|[+-]\d\d:?\d\d$/.test(ts) ? '' : 'Z'), state: 'pre', clock: '',
-      cs: [{ raw: e.strHomeTeam, home: true, sc: null }, { raw: e.strAwayTeam, home: false, sc: null }] };
+    const h = sc(e.intHomeScore), a = sc(e.intAwayScore), done = h != null && a != null;
+    return { t: ts + (/[zZ]$|[+-]\d\d:?\d\d$/.test(ts) ? '' : 'Z'), state: done ? 'post' : 'pre', clock: '', comp: e.strLeague,
+      cs: [{ raw: e.strHomeTeam, home: true, sc: h }, { raw: e.strAwayTeam, home: false, sc: a }] };
   });
 }
 // Programma di una squadra: giocate (schedule) + future (schedule?fixture=true, tutte le competizioni).
@@ -145,6 +166,16 @@ module.exports = async (req, res) => {
     tables[k] = { title: TIT[k], mine, rows: g.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
   }
   let evs = [].concat(...Object.values(E));
+  // Squadre senza classifica ESPN: provo TheSportsDB (es. Challenge League)
+  const miss = TEAMS.filter(t => !keys.some(k => S[k] && S[k].some(g => g.rows.some(r => t.re.test(r.raw)))));
+  const xt = await Promise.allSettled(miss.map(t => tsdbTable(t, now)));
+  miss.forEach((t, i) => {
+    if (xt[i].status === 'rejected') return errors.push(`Classifica ${t.name} (TheSportsDB): ${xt[i].reason && xt[i].reason.message}`);
+    const k = 'X' + t.id, v = xt[i].value, me = v.rows.find(r => t.re.test(r.raw));
+    if (!me) return errors.push(`Classifica ${t.name} (TheSportsDB): squadra assente in ${v.title}`);
+    keys.push(k); TIT[k] = v.title; S[k] = [{ name: v.title, rows: v.rows }];
+    tables[k] = { title: v.title, mine: [me.n], rows: v.rows.map(r => [r.rk, r.n, r.pts, r.pl, r.w, r.d, r.l, r.gd, r.nc, r.nd]) };
+  });
   const tid = {};
   for (const t of TEAMS) for (const k of keys) {
     const g = S[k] && S[k].find(g => g.rows.some(r => t.re.test(r.raw)));

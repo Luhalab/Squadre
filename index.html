@@ -105,7 +105,8 @@ ${s.live?`<div class="lv"><span class="dot"></span>${s.live.score} ${s.live.cloc
 <div class="ls">${s.last?dot(s.last.res)+' '+s.last.score:'—'}</div></div></button>`).join('')}
 function table(){
  const T=D.tables||{},t=D.teams.find(x=>x.id===sel)||D.teams[0];
- const ks=Object.keys(T).filter(k=>t&&T[k].mine.includes(t.name)),ak=ks.length?ks:Object.keys(T);
+ const ak=Object.keys(T).filter(k=>t&&T[k].mine.includes(t.name));
+ if(!ak.length){$('th').innerHTML='<b>Classifica non disponibile</b>';$('tbl').innerHTML='';$('lg').innerHTML='';return}
  if(!ak.includes(cmp))cmp=Object.keys(T).find(k=>T[k].title===(t&&t.league)&&ak.includes(k))||ak[0];
  const k=cmp,tb=T[k];
  if(!tb||!tb.rows.length){$('th').innerHTML='';$('tbl').innerHTML='';$('lg').innerHTML='';return}
