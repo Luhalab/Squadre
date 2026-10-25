@@ -1,5 +1,6 @@
 // Funzione di prova (solo lettura). Usi:
 //  /api/test?p=203            pagina Televideo (203 = classifica A, 210 = classifica B)
+//  /api/test?t=https://...teletext.ch/...  Teletext svizzero (solo host teletext.ch), testo grezzo
 //  /api/test?e=a&k=standings  ESPN: e = a (Serie A) | b (Serie B) | n (Nations League); k = standings | scoreboard
 const E = { a: 'ita.1', b: 'ita.2', n: 'uefa.nations' };
 const UA = { 'user-agent': 'Mozilla/5.0 (Squadre app personale)' };
@@ -26,6 +27,14 @@ module.exports = async (req, res) => {
   const t0 = Date.now();
   let url;
   try {
+    if (q.t) {
+      const u = new URL(String(q.t));
+      if (!/(^|\.)teletext\.ch$/.test(u.hostname)) return res.status(200).send('solo teletext.ch');
+      url = u.href;
+      const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(8000) });
+      const raw = await r.text();
+      return res.status(200).send(`Teletext - status ${r.status} - ${r.headers.get('content-type')} - ${Date.now() - t0} ms - ${raw.length} byte\n${raw.slice(0, 4000)}`);
+    }
     if (q.e) {
       const lg = E[q.e];
       if (!lg) return res.status(200).send('parametro e non valido (a, b, n)');
