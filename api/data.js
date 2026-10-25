@@ -66,20 +66,29 @@ async function tsdbTable(t, now) {
   const d = new Date(now), y = d.getUTCFullYear(), s = d.getUTCMonth() >= 6 ? y + '-' + (y + 1) : (y - 1) + '-' + y;
   const q = '?l=' + tm.idLeague + '&s=' + s;
   const [lt, se] = await Promise.allSettled([tsdb('lookuptable.php' + q), tsdb('eventsseason.php' + q)]);
-  const ev = se.status === 'fulfilled' ? (se.value.events || []).map(tsEv) : [];
-  let rows = lt.status === 'fulfilled' ? (lt.value.table || []).map(r => ({ raw: r.strTeam, n: nm(r.strTeam), rk: +r.intRank, pts: +r.intPoints, pl: +r.intPlayed,
-    w: +r.intWin, d: +r.intDraw, l: +r.intLoss, gd: +r.intGoalDifference, nc: null, nd: null })).sort((a, b) => a.rk - b.rk) : [];
+  const arr = (r, k) => r.status === 'fulfilled' && Array.isArray(r.value[k]) ? r.value[k] : []; // la chiave gratuita può rispondere con un testo
+  let ev = arr(se, 'events').map(tsEv), via = 'stagione';
+  if (!ev.length) {
+    // ripiego: una richiesta per giornata, fino a quella della prossima partita
+    const nx = await tsdb('eventsnext.php?id=' + tm.idTeam).catch(() => ({}));
+    const nr = Math.min(40, +((Array.isArray(nx.events) && nx.events.find(e => e.idLeague === tm.idLeague)) || {}).intRound || 0);
+    const rr = await Promise.allSettled(Array.from({ length: nr }, (_, i) => tsdb('eventsround.php' + q.replace('&', '&r=' + (i + 1) + '&'))));
+    ev = [].concat(...rr.map(r => arr(r, 'events'))).map(tsEv); via = 'giornate ' + nr;
+  }
+  let rows = arr(lt, 'table').map(r => ({ raw: r.strTeam, n: nm(r.strTeam), rk: +r.intRank, pts: +r.intPoints, pl: +r.intPlayed,
+    w: +r.intWin, d: +r.intDraw, l: +r.intLoss, gd: +r.intGoalDifference, nc: null, nd: null })).sort((a, b) => a.rk - b.rk);
   const calc = fromResults(ev);
   // solo se i risultati sono completi: le squadre della tabella devono avere gli stessi punti
   const ok = rows.every(r => { const c = calc.find(c => c.raw === r.raw); return c && c.pts === r.pts && c.pl === r.pl; });
   if (calc.length > rows.length && calc.some(r => r.pl) && ok) rows = calc;
   if (!rows.length) throw new Error('classifica vuota' + (lt.status === 'rejected' ? ': ' + lt.reason.message : ''));
-  return { title: nm(tm.strLeague), rows, ev, src: rows === calc ? 'risultati' : 'tabella' };
+  return { title: nm(tm.strLeague), rows, ev, src: rows === calc ? 'risultati (' + via + ')' : 'tabella' };
 }
 async function tsdbNext(t) {
   const tm = await tsdbTeam(t);
   const [n, l] = await Promise.all([tsdb('eventsnext.php?id=' + tm.idTeam), tsdb('eventslast.php?id=' + tm.idTeam).catch(() => ({}))]);
-  return (n.events || []).concat(l.results || []).map(tsEv);
+  const A = x => Array.isArray(x) ? x : [];
+  return A(n.events).concat(A(l.results)).map(tsEv);
 }
 // Programma di una squadra: giocate (schedule) + future (schedule?fixture=true, tutte le competizioni).
 async function sched(lg, id) {
