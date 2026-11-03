@@ -109,8 +109,8 @@ function ttTable(lines) {
   return { title: h[1] === 'SL' ? 'Super League' : 'Challenge League', rows };
 }
 // Aggiunge in coda le squadre che mancano a una classifica parziale (stessa giornata: le righe in comune devono coincidere).
-async function ttComplete(t, rows) {
-  const tabs = (await Promise.allSettled([203, 204].map(ttPage))).filter(x => x.status === 'fulfilled').map(x => ttTable(x.value)).filter(Boolean);
+async function ttComplete(t, rows, pages) {
+  const tabs = (await (pages || Promise.allSettled([203, 204].map(ttPage)))).filter(x => x.status === 'fulfilled').map(x => ttTable(x.value)).filter(Boolean);
   const tt = tabs.find(v => v.rows.some(r => t.re.test(r.raw)));
   if (!tt) throw new Error('squadra non trovata');
   const same = rows.every(r => { const x = tt.rows.find(x => x.rk === r.rk); return x && x.pts === r.pts && x.pl === r.pl; });
@@ -199,6 +199,11 @@ function forTeam(t, evs) {
 module.exports = async (req, res) => {
   const errors = [], now = Date.now();
   const keys = Object.keys(LG);
+  // Avvio subito, in parallelo a ESPN, le richieste di riserva per le squadre che ESPN non copre (tt):
+  // prima partivano solo dopo la risposta ESPN, allungando la catena di attesa.
+  const pre = {}, quiet = p => (p.catch(() => {}), p);
+  for (const t of TEAMS) if (t.tt) pre[t.id] = { table: quiet(tsdbTable(t, now)), next: quiet(tsdbNext(t)) };
+  const ttPages = TEAMS.some(t => t.tt) ? Promise.allSettled([203, 204].map(ttPage)) : null;
   const jobs = [];
   for (const k of keys) {
     jobs.push(get(`${B}v2/sports/soccer/${LG[k]}/standings`).then(j => ({ k, kind: 's', v: groups(j) })));
@@ -229,8 +234,8 @@ module.exports = async (req, res) => {
   const has = t => keys.some(k => S[k] && S[k].some(g => g.rows.some(r => t.re.test(r.raw))));
   // Squadre senza classifica ESPN: provo TheSportsDB
   const miss = TEAMS.filter(t => !has(t));
-  const xt = await Promise.allSettled(miss.map(t => tsdbTable(t, now)));
-  const tc = await Promise.allSettled(miss.map((t, i) => t.tt && xt[i].status === 'fulfilled' && xt[i].value.src === 'tabella' ? ttComplete(t, xt[i].value.rows) : null));
+  const xt = await Promise.allSettled(miss.map(t => (pre[t.id] && pre[t.id].table) || tsdbTable(t, now)));
+  const tc = await Promise.allSettled(miss.map((t, i) => t.tt && xt[i].status === 'fulfilled' && xt[i].value.src === 'tabella' ? ttComplete(t, xt[i].value.rows, ttPages) : null));
   miss.forEach((t, i) => {
     if (xt[i].status === 'rejected') return errors.push(`Classifica ${t.name} (TheSportsDB): ${xt[i].reason && xt[i].reason.message}`);
     const k = 'X' + t.id, v = xt[i].value, me = v.rows.find(r => t.re.test(r.raw));
@@ -256,7 +261,7 @@ module.exports = async (req, res) => {
   TEAMS.filter(t => tid[t.id]).forEach((t, i) => { if (sj[i].status === 'fulfilled') tot[t.id] = sj[i].value.nr + ' giocate + ' + sj[i].value.nf + ' future'; });
   const nf = t => { const f = forTeam(t, evs); return f.next ? 1 + f.more.length : 0; };
   const need = TEAMS.filter(t => nf(t) < 2);
-  const tj = await Promise.allSettled(need.map(tsdbNext));
+  const tj = await Promise.allSettled(need.map(t => (pre[t.id] && pre[t.id].next) || tsdbNext(t)));
   need.forEach((t, i) => {
     if (tj[i].status === 'fulfilled') { evs = evs.concat(tj[i].value); tsn[t.id] = tj[i].value.length; }
     else { tsn[t.id] = 'err'; errors.push(`Calendario ${t.name} (TheSportsDB): ${tj[i].reason && tj[i].reason.message}`); }

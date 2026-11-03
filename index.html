@@ -64,7 +64,6 @@ td:last-child{font-weight:700}
 .fm{display:flex;align-items:center;gap:5px;padding:8px 4px 2px;font-size:13px;color:var(--mu)}
 .fm .rs{width:20px;height:20px;font-size:11px}
 .live{display:inline-block;margin:8px 4px 0;padding:8px 12px;border-radius:10px;border:1px solid var(--live);color:var(--live);text-decoration:none;font-size:13px;font-weight:600}
-.wl{display:block;text-align:center;margin:4px 0 8px;padding:10px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);text-decoration:none;font-weight:600}
 .src{color:var(--mu);font-size:11px;text-align:center;margin-top:6px}.err{color:var(--live)}
 </style>
 </head>
@@ -76,7 +75,6 @@ td:last-child{font-weight:700}
 <div class="card"><div class="th" id="th"></div><div class="tw"><table id="tbl"></table></div>
 <div class="lg" id="lk"><span><b>G</b> giocate</span><span><b>V</b> vinte</span><span><b>N</b> pareggiate</span><span><b>P</b> perse</span><span><b>DR</b> differenza reti</span><span><b>Pt</b> punti</span></div>
 <div class="lg" id="lg"></div></div>
-<a class="wl" href="/widget.html">Apri il widget ↗</a>
 <div class="src" id="src"></div>
 </main>
 <script>
@@ -138,16 +136,18 @@ function render(){
  cards();table();detail();
  $('note').hidden=D.src!=='demo';
  const via=D.via&&Object.values(D.via).some(v=>v>1)?`<br>via: ${Object.entries(D.via).map(([k,v])=>k+v).join(' ')}`:'';
- $('src').innerHTML=D.src==='demo'?`<span class="err">Dati reali non disponibili${err?': '+err:''}</span>`:`Fonte: ${D.src} · aggiornato ${hm(D.ts||Date.now())}`+via+(D.dbg?`<br>${D.dbg.join(' · ')}`:'')+((D.errors&&D.errors.length)?`<br><span class="err">${D.errors.join(' · ')}</span>`:'');
+ $('src').innerHTML=D.src==='demo'?`<span class="err">Dati reali non disponibili${err?': '+err:''}</span>`:`Fonte: ${D.src} · aggiornato ${hm(D.ts||Date.now())}`+via+(D.dbg?`<br>${D.dbg.join(' · ')}`:'')+((D.errors&&D.errors.length)?`<br><span class="err">${D.errors.join(' · ')}</span>`:'')+(err&&D.src!=='demo'?`<br><span class="err">Non aggiornato: ${err}</span>`:'');
 }
 async function load(){
  last=Date.now();
  try{const r=await fetch('/api/data');const j=await r.json();
   if(!r.ok)throw new Error((j.errors||['HTTP '+r.status]).join(' · '));
-  D=j;err='';}
- catch(e){D=DEMO;err=e.message;}
+  D=j;err='';try{localStorage.setItem('sq-data',JSON.stringify(j))}catch(x){}}
+ catch(e){if(D.src==='demo')D=DEMO;err=e.message;}
  render();
 }
+// apertura istantanea: ultimi dati salvati, poi aggiornamento dalla rete
+try{const c=JSON.parse(localStorage.getItem('sq-data'));if(c&&c.teams){D=c;render()}}catch(x){}
 $('mt').addEventListener('click',e=>{const b=e.target.closest('.mc');if(b){const s=D.teams.find(x=>x.id===b.dataset.id);if(s&&empty(s)&&D.src!=='demo')window.open(gq(s),'_blank','noopener');sel=b.dataset.id;cmp=null;cards();table();detail()}});
 $('th').addEventListener('change',e=>{if(e.target.id==='cs'){cmp=e.target.value;table()}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-last>60000)load()});
